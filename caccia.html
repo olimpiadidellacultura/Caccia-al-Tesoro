@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Caccia al Tesoro - Scanner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            text-align: center;
+            padding: 20px;
+            min-height: 100vh;
+            background-size: cover;
+            background-position: center;
+            transition: background-image 0.5s ease-in-out;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+        }
+        
+
+        #qr-scanner {
+            width: 250px;
+            height: 250px;
+            margin: 20px auto;
+            border: 3px solid #ffd700;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .scan-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 70%;
+            height: 70%;
+            border: 4px solid #ffd700;
+            border-radius: 10px;
+            pointer-events: none;
+        }
+
+        .clue-box {
+            background: rgba(255, 215, 0, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px auto;
+            max-width: 600px;
+        }
+
+        button {
+            background: #ffd700;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+            transition: opacity 0.3s;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        #camera-error {
+            color: #ff4444;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .progress {
+            font-size: 1.2em;
+            color: #ffd700;
+            margin: 15px 0;
+        }
+
+        .manual-input {
+            margin: 20px auto;
+            max-width: 300px;
+        }
+
+        #manual-code {
+            width: 200px;
+            padding: 10px;
+            border-radius: 5px;
+            border: 2px solid #ffd700;
+            background: #333;
+            color: #fff;
+            margin-right: 10px;
+        }
+
+        .error-message {
+            color: #ff4444;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="progress">Indizio <span id="current-step">1</span>/<span id="total-steps"></span></div>
+        
+        <div class="clue-box">
+            <h2 id="current-place">Piazza del Municipio</h2>
+            <p id="clue-text">Cercate dove l'acqua sgorga e i bambini giocano</p>
+            <p id="clue-address">Indirizzo: Via Roma 123</p>
+        </div>
+
+        <div id="qr-scanner">
+            <div id="reader"></div>
+            <div class="scan-overlay"></div>
+        </div>
+        <div id="camera-error">Impossibile accedere alla fotocamera. Controlla i permessi!</div>
+
+        <div class="manual-input">
+            <input type="text" id="manual-code" placeholder="Inserisci codice manualmente">
+            <button onclick="verifyManualCode()">Verifica</button>
+            <div class="error-message" id="manual-error">Codice non valido!</div>
+        </div>
+
+        <button id="toggle-btn" onclick="toggleScanner()">Attiva Scanner</button>
+        <p id="result"></p>
+    </div>
+
+    <script>
+        const clues = [
+            {
+                place: "Villa Comunale",
+                clue: "Sono un custode di saggezza, ti invito alla riflessione. Mi trovi ?????? Il luogo dietro di me è sempre animato e vivo, ma la mia voce è silenziosa. Cosa sono?",
+                address: "Corso Giuseppe Garibaldi, 80053 Castellammare di Stabia NA",
+                passwords: [
+                    "2MILQHZDWUVSX7BL",
+                    "https://portal.moopsy.world/riddle/2MILQHZDWUVSX7BL"
+                ],
+                backgroundUrl: "https://rete.comuni-italiani.it/foto/2009/wp-content/uploads/2009/06/6771-800x535-500x334.jpg"
+            },
+            {
+                place: "Stazione ferroviaria",
+                clue: "Non entrare, sono vicino ma non mi vedi, cerca un colore primario e guardati le spalle",
+                address: "Piazza Unità d'Italia, 80053 Castellammare di Stabia NA",
+                passwords: [
+                    "8JR32UCFYN4JU7BE",
+                    "https://portal.moopsy.world/riddle/8JR32UCFYN4JU7BE"
+                ],
+                backgroundUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Stazione_di_Castellammare_di_Stabia_%28Circumvesuviana%29.jpg/390px-Stazione_di_Castellammare_di_Stabia_%28Circumvesuviana%29.jpg"
+            },
+            {
+                place: "Piazza vicino alla Concattedrale di Santissima Maria Assunta e San Catello",
+                clue: "Sono un luogo di silenzio e preghiera, con alte guglie che toccano il cielo. Cercami nella piazza principale avrai bisogno di me per rinfrescarti ed io poi ti rivelerò un segreto",
+                address: "Piazza Papa Giovanni XXIII, 80053 Castellammare di Stabia NA",
+                passwords: [
+                    "NXBOXZR0UW7FV7BH",
+                    "https://portal.moopsy.world/riddle/NXBOXZR0UW7FV7BH"
+                ],
+                backgroundUrl: "https://rete.comuni-italiani.it/foto/2012/wp-content/uploads/2012/10/162615-800x517.jpg"
+            },
+            {
+                place: "Torre dell'orologio",
+                clue: "Il 4 è la chiave, seguilo e cerca vicino alla natura",
+                address: "Torre Dellorologio, Piazza Cristoforo Colombo, 80053, Castellammare di Stabia, NA",
+                passwords: [
+                    "ZCAPR9OSWDK7V7BJ",
+                    "https://portal.moopsy.world/riddle/ZCAPR9OSWDK7V7BJ"
+                ],
+                backgroundUrl: "https://upload.wikimedia.org/wikipedia/commons/2/2a/Piazza_Orologio.JPG"
+            },
+            {
+                place: "Zona portuale",
+                clue: "(RAGGIUNGETE LE COORDINATE DATE)\nSono un punto di ancoraggio per le navi, testimone di tanti tramonti e ritorni . Il blu è il mio colore preferito. Cercami dove le barche si riposano dopo un lungo viaggio",
+                address: "40.695713, 14.479185",
+                passwords: [
+                    "XYSZ7HVKIPGRW7BN",
+                    "https://portal.moopsy.world/riddle/XYSZ7HVKIPGRW7BN"
+                ],
+                backgroundUrl: "https://i.ibb.co/SXjXd9cH/Immagine-2025-03-07-134714.png"
+            },
+            {
+                place: "Villa Comunale (Sì, di nuovo)",
+                clue: "Sono un messaggero solitario, con parole scolpite nel tempo. Cercami lontano dalla folla lì troverai ciò che cerchi.",
+                address: "Corso Giuseppe Garibaldi, 80053, Castellammare di Stabia, Napoli",
+                passwords: [
+                    "WOAJKXHAZIDSU7C0",
+                    "https://portal.moopsy.world/riddle/WOAJKXHAZIDSU7C0"
+                ],
+                backgroundUrl: ""
+            },
+            {
+                place: "Banca Stabiese",
+                clue: "Sono il cuore finanziario della città, dove i soldi cambiano di mano. In molti chiedono credito, ma tanti agricoltori si fidano di me. Cercami e, proprio di fronte a me, sotto un luogo di riposo, troverai il segreto che mantengo nascosto in bella mostra.",
+                address: "Banca Stabiese, Via Ettore Tito 1, 80053, Castellammare di Stabia, NA",
+                passwords: [
+                    "HDJCIWR7GUSXU7C2",
+                    "https://portal.moopsy.world/riddle/HDJCIWR7GUSXU7C2"
+                ],
+                backgroundUrl: "https://www.bancastabiese.it/assets/img/Homepage/Gallery/1%20long.png"
+            },
+            {
+                place: "Eheh, e mo so fatti tuoi",
+                clue: "Dove i ricordi si vendono e i tesori si nascondono, cerca un luogo di commercio, lì la tua ricerca finirà.",
+                address: "",
+                passwords: [
+                    "LLMONGACJLNEZ7C4",
+                    "https://portal.moopsy.world/riddle/LLMONGACJLNEZ7C4"
+                ],
+                backgroundUrl: ""
+            }
+        ];
+
+        let currentClueIndex = 0;
+        let html5QrCode = null;
+        let isScanning = false;
+
+        function initScanner() {
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
+
+            const qrConfig = {
+                fps: 10,
+                qrbox: 250,
+                disableFlip: false
+            };
+
+            html5QrCode.start(
+                { facingMode: "environment" },
+                qrConfig,
+                handleQrScan,
+                handleCameraError
+            ).then(() => {
+                isScanning = true;
+                updateButtonState();
+                document.getElementById("camera-error").style.display = "none";
+            })
+            .catch(err => {
+                console.error("QR Scanner Error:", err);
+                let errorMessage = "Si è verificato un errore.";
+                if (err.name === "NotAllowedError") {
+                    errorMessage = "Accesso alla fotocamera negato. Controlla le autorizzazioni.";
+                } else if (err.name === "NotFoundError") {
+                    errorMessage = "Nessuna fotocamera trovata sul dispositivo.";
+                } else if (err.name === "NotReadableError") {
+                    errorMessage = "Impossibile accedere alla fotocamera. Potrebbe essere occupata da un'altra applicazione.";
+                }
+                document.getElementById("camera-error").innerText = errorMessage;
+                document.getElementById("camera-error").style.display = "block";
+            });
+        }
+
+        function handleQrScan(decodedText) {
+            if (clues[currentClueIndex].passwords.includes(decodedText)) {
+                handleCorrectCode();
+            } else {
+                showError();
+            }
+        }
+
+        function verifyManualCode() {
+            const manualCode = document.getElementById("manual-code").value.trim();
+            if (clues[currentClueIndex].passwords.includes(manualCode)) {
+                handleCorrectCode();
+                document.getElementById("manual-code").value = '';
+                document.getElementById("manual-error").style.display = 'none';
+            } else {
+                showError();
+            }
+        }
+
+        function handleCorrectCode() {
+            if(html5QrCode && isScanning) {
+                html5QrCode.stop();
+                isScanning = false;
+            }
+            
+            if(currentClueIndex < clues.length - 1) {
+                currentClueIndex++;
+                updateClueDisplay();
+                setTimeout(() => initScanner(), 1000);
+                alert("Corretto! Prossimo indizio!");
+            } else {
+                alert("Complimenti! Hai vinto!! Comunica allo staff la password \"Rammarro Marrone\"");
+                updateClueDisplay();
+            }
+        }
+
+        function showError() {
+            document.getElementById("manual-error").style.display = 'block';
+            setTimeout(() => {
+                document.getElementById("manual-error").style.display = 'none';
+            }, 2000);
+        }
+
+        function handleCameraError(error) {
+            console.error(error);
+        }
+
+        function toggleScanner() {
+            if (isScanning) {
+                html5QrCode.stop().then(() => {
+                    isScanning = false;
+                    updateButtonState();
+                }).catch(err => console.error(err));
+            } else {
+                initScanner();
+            }
+        }
+
+        function updateButtonState() {
+            const btn = document.getElementById("toggle-btn");
+            btn.textContent = isScanning ? "Disattiva Scanner" : "Attiva Scanner";
+        }
+
+        function updateClueDisplay() {
+            document.getElementById("current-place").textContent = clues[currentClueIndex].place;
+            document.getElementById("clue-text").textContent = clues[currentClueIndex].clue;
+            document.getElementById("clue-address").textContent = `Indirizzo: ${clues[currentClueIndex].address}`;
+            document.getElementById("current-step").textContent = currentClueIndex + 1;
+            document.getElementById("total-steps").textContent = clues.length;
+            document.body.style.backgroundImage = `linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('${clues[currentClueIndex].backgroundUrl}')`;
+        }
+
+        document.getElementById("manual-code").addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                verifyManualCode();
+            }
+        });
+
+        window.onload = () => {
+            updateClueDisplay();
+            document.getElementById("total-steps").textContent = clues.length;
+        };
+
+        window.onbeforeunload = () => {
+            if (html5QrCode && isScanning) {
+                html5QrCode.stop();
+            }
+        };
+    </script>
+</body>
+</html>
